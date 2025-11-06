@@ -1,0 +1,1202 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Protochaos Feld V18: Sättigung & Resonanz</title>
+<style>
+    body { margin:0; overflow:hidden; font-family: Inter, system-ui, sans-serif; color:#E0F7FA; background:#000; }
+    canvas { display:block; }
+
+    #controls{
+        position:fixed; top:10px; left:10px; width:320px; max-height:95vh; overflow:auto;
+        background:rgba(0,0,0,0.95); border:1px solid rgba(0,255,255,0.5); border-radius:12px;
+        box-shadow: 0 0 35px rgba(0,255,255,0.8), 0 0 10px rgba(0,255,255,0.9);
+        padding:14px; z-index:10; transition:opacity .25s, transform .25s;
+    }
+    #controls.hidden{ opacity:0; transform:translateX(-340px); pointer-events:none; }
+
+    .section-title{ color:#84FFFF; font-size:1.05rem; font-weight:700; margin:.6rem 0 .4rem 0; padding-top: .4rem; border-top: 1px dashed rgba(132, 255, 255, 0.3); }
+    .control-group{ margin-bottom:10px; }
+    .control-label{ display:flex; justify-content:space-between; align-items:center; font-size:.85rem; margin-top:5px; margin-bottom:2px; font-weight:500; }
+    .display-value{ font-weight:400; color:#00FFFF; font-family:monospace; }
+
+    input[type="range"]{ width:100%; height:4px; appearance:none; background:#00FFFF; border-radius:2px; cursor:pointer; margin-top:3px; }
+    input[type="range"]::-webkit-slider-thumb{ appearance:none; width:12px; height:12px; background:#84FFFF; border-radius:50%; box-shadow:0 0 5px #00FFFF; }
+    input[type="range"]::-moz-range-thumb{ width:12px; height:12px; background:#84FFFF; border-radius:50%; box-shadow:0 0 5px #00FFFF; }
+    
+    select{ width:100%; padding:4px; margin-top:5px; border-radius:4px; background:#000; color:#84FFFF; border:1px solid #00FFFF; font-size:.85rem; }
+
+    .toggle-btn {
+        background: #00FFFF; color: #000; padding: 6px 12px; border: none; border-radius: 6px; 
+        cursor: pointer; font-weight: bold; margin-top: 10px; font-size: 0.85rem;
+        transition: background-color 0.2s, box-shadow 0.2s;
+        box-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
+    }
+    .toggle-btn:hover { background: #84FFFF; }
+    #toggleControls { 
+        position: fixed; 
+        top: 10px; 
+        left: 340px; 
+        background: #00FFFF; 
+        color: #000;
+        box-shadow: 0 0 10px rgba(0, 255, 255, 0.5); 
+    }
+
+    #pauseButton {
+        background: #FF416C; color: #FFF;
+        box-shadow: 0 0 10px rgba(255, 65, 108, 0.5);
+        margin-left: 10px;
+    }
+    #pauseButton.paused { background: #00FF00; box-shadow: 0 0 10px rgba(0, 255, 0, 0.5); }
+
+    .color-picker-group { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; }
+    .color-picker-label { margin-right: 10px; }
+    #backgroundColorInput { width: 40px; height: 20px; border: 1px solid #00FFFF; padding: 0; }
+
+    .checkbox-group { display: flex; align-items: center; margin-top: 5px; }
+    .checkbox-group label { margin-left: 5px; font-weight: 400; font-size: .8rem; }
+    
+    /* Layout für die Haupt-Buttons */
+    #mainButtons { 
+        display: flex; 
+        gap: 10px; 
+        margin-bottom: 10px; 
+    }
+</style>
+</head>
+<body>
+    <canvas id="chaosCanvas"></canvas>
+
+    <div id="controls">
+        <div id="mainButtons">
+            <button id="pauseButton" class="toggle-btn" style="flex-grow: 1;">Pausieren (P)</button>
+            <button id="randomizeAllButton" class="toggle-btn" style="flex-grow: 1;">Zufall (Alle)</button>
+        </div>
+
+        <div class="section-title">Canvas</div>
+        <div class="control-group">
+            <div class="color-picker-group">
+                <label for="backgroundColorInput" class="color-picker-label">Hintergrundfarbe</label>
+                <input type="color" id="backgroundColorInput" value="#000000">
+            </div>
+
+            <label class="control-label">Render Modus</label>
+            <select id="compositeOperationSelect">
+                <option value="source-over">Normal</option>
+                <option value="lighter">Lighter (Additiv)</option>
+                <option value="difference">Difference (Invert)</option>
+                <option value="multiply">Multiply (Dunkler)</option>
+                <option value="screen">Screen (Heller)</option>
+                <option value="overlay">Overlay</option>
+                <option value="hard-light">Hard Light</option>
+            </select>
+        </div>
+
+        <div class="section-title">Feld-Geometrie</div>
+        <div class="control-group">
+            <label class="control-label">Max. LIKs <span id="maxLikCountDisplay" class="display-value"></span></label>
+            <input type="range" id="maxLikCountInput" min="50" max="1000" step="50"/>
+
+            <label class="control-label">Min. LIKs <span id="minLikCountDisplay" class="display-value"></span></label>
+            <input type="range" id="minLikCountInput" min="10" max="500" step="10"/>
+
+            <label class="control-label">Max. Lebensdauer (Frames) <span id="maxLikLifespanDisplay" class="display-value"></span></label>
+            <input type="range" id="maxLikLifespanInput" min="100" max="5000" step="100"/>
+
+            <label class="control-label">Universum-Radius <span id="universeRadiusDisplay" class="display-value"></span></label>
+            <input type="range" id="universeRadiusInput" min="100" max="2000" step="50"/>
+        </div>
+
+        <div class="section-title">Schwarm-Verhalten</div>
+        <div class="control-group">
+            <label class="control-label">Anziehungs-Stärke <span id="attractionStrengthDisplay" class="display-value"></span></label>
+            <input type="range" id="attractionStrengthInput" min="0.0001" max="0.01" step="0.0001"/>
+
+            <label class="control-label">Farb-Ähnlichkeits-Schwelle <span id="attractionSimilarityThresholdDisplay" class="display-value"></span></label>
+            <input type="range" id="attractionSimilarityThresholdInput" min="0.0" max="1.0" step="0.01"/>
+
+            <label class="control-label">Abstoßungs-Stärke <span id="repulsionStrengthDisplay" class="display-value"></span></label>
+            <input type="range" id="repulsionStrengthInput" min="0.0001" max="0.02" step="0.0001"/>
+
+            <label class="control-label">Basis-Wander-Geschw. <span id="baseMigrationSpeedDisplay" class="display-value"></span></label>
+            <input type="range" id="baseMigrationSpeedInput" min="0.0001" max="0.01" step="0.0001"/>
+
+            <label class="control-label">Pers. Bereich Radius <span id="personalSpaceRadiusDisplay" class="display-value"></span></label>
+            <input type="range" id="personalSpaceRadiusInput" min="10" max="500" step="10"/>
+
+            <label class="control-label">Pers. Bereich Abstoßung <span id="personalSpaceRepulsionDisplay" class="display-value"></span></label>
+            <input type="range" id="personalSpaceRepulsionInput" min="0.01" max="1.0" step="0.01"/>
+        </div>
+
+        <div class="section-title">Interaktion</div>
+        <div class="control-group">
+            <label class="control-label">Globale Drift Stärke <span id="globalDriftStrengthDisplay" class="display-value"></span></label>
+            <input type="range" id="globalDriftStrengthInput" min="0.0" max="0.5" step="0.01"/>
+
+            <label class="control-label">Globale Drift Impuls <span id="globalDriftMomentumDisplay" class="display-value"></span></label>
+            <input type="range" id="globalDriftMomentumInput" min="0.8" max="0.999" step="0.001"/>
+
+            <label class="control-label">Animations-Geschw. <span id="animationSpeedDisplay" class="display-value"></span></label>
+            <input type="range" id="animationSpeedInput" min="0.1" max="5.0" step="0.1"/>
+
+            <label class="control-label">Kamera-Geschw. <span id="cameraMovementSpeedDisplay" class="display-value"></span></label>
+            <input type="range" id="cameraMovementSpeedInput" min="1.0" max="20.0" step="1.0"/>
+        </div>
+
+        <div class="section-title">Resonanzlinien</div>
+        <div class="control-group">
+            <label class="control-label">Linien Zeichnung Sample <span id="lineDrawSampleCountDisplay" class="display-value"></span></label>
+            <input type="range" id="lineDrawSampleCountInput" min="1" max="100" step="1"/>
+
+            <label class="control-label">Resonanz Dicke <span id="resonanceThicknessDisplay" class="display-value"></span></label>
+            <input type="range" id="resonanceThicknessInput" min="0.1" max="5.0" step="0.1"/>
+
+            <label class="control-label">Max. Dicke Chaos <span id="maxLineThicknessChaosDisplay" class="display-value"></span></label>
+            <input type="range" id="maxLineThicknessChaosInput" min="0.0" max="1.0" step="0.01"/>
+
+            <label class="control-label">Resonanz Alpha <span id="resonanceAlphaDisplay" class="display-value"></span></label>
+            <input type="range" id="resonanceAlphaInput" min="0.01" max="1.0" step="0.01"/>
+
+            <label class="control-label">Max. Resonanz Dist. <span id="maxResonanceDistDisplay" class="display-value"></span></label>
+            <input type="range" id="maxResonanceDistInput" min="50" max="1000" step="10"/>
+        </div>
+
+        <div class="section-title">Linien-Verzerrung</div>
+        <div class="control-group">
+            <label class="control-label">Kurven-Wiggle-Faktor <span id="curveWiggleFactorDisplay" class="display-value"></span></label>
+            <input type="range" id="curveWiggleFactorInput" min="0.0" max="1.0" step="0.01"/>
+
+            <label class="control-label">Pulsations-Geschw. <span id="pulsationSpeedDisplay" class="display-value"></span></label>
+            <input type="range" id="pulsationSpeedInput" min="0.01" max="1.0" step="0.01"/>
+
+            <label class="control-label">Linien-Ziel-Zug <span id="lineTargetPullDisplay" class="display-value"></span></label>
+            <input type="range" id="lineTargetPullInput" min="0.01" max="1.0" step="0.01"/>
+        </div>
+        
+        <div class="section-title">Feld-Farbe (LIKs)</div>
+        <div class="control-group">
+            <label class="control-label">LIK Sättigung <span id="paletteSaturationDisplay" class="display-value"></span></label>
+            <input type="range" id="paletteSaturationInput" min="0" max="100" step="1"/>
+
+            <label class="control-label">LIK Helligkeit <span id="paletteLightnessDisplay" class="display-value"></span></label>
+            <input type="range" id="paletteLightnessInput" min="0" max="100" step="1"/>
+        </div>
+
+        <div class="section-title">LIK Rendering</div>
+        <div class="control-group">
+            <div class="checkbox-group">
+                <input type="checkbox" id="renderLiksInput" checked>
+                <label for="renderLiksInput">LIKs rendern</label>
+            </div>
+            
+            <label class="control-label">Basisgröße LIK <span id="likBaseSizeDisplay" class="display-value"></span></label>
+            <input type="range" id="likBaseSizeInput" min="1.0" max="15.0" step="0.1"/>
+
+            <label class="control-label">Min. Rendergröße <span id="minLikRenderSizeDisplay" class="display-value"></span></label>
+            <input type="range" id="minLikRenderSizeInput" min="0.1" max="5.0" step="0.1"/>
+
+            <label class="control-label">Spur Alpha <span id="trailAlphaDisplay" class="display-value"></span></label>
+            <input type="range" id="trailAlphaInput" min="0.0" max="1.0" step="0.01"/>
+        </div>
+
+        <div class="section-title">RGB Farbverschiebung</div>
+        <div class="control-group">
+            <div class="checkbox-group">
+                <input type="checkbox" id="rgbShiftLiksInput" checked>
+                <label for="rgbShiftLiksInput">RGB Shift auf LIKs</label>
+            </div>
+            <div class="checkbox-group">
+                <input type="checkbox" id="rgbShiftLinesInput" checked>
+                <label for="rgbShiftLinesInput">RGB Shift auf Linien</label>
+            </div>
+
+            <label class="control-label">Shift Stärke (px) <span id="rgbShiftAmountDisplay" class="display-value"></span></label>
+            <input type="range" id="rgbShiftAmountInput" min="0.0" max="15.0" step="0.1"/>
+
+            <label class="control-label">Shift Winkel (Grad) <span id="rgbShiftAngleInput" class="display-value"></span></label>
+            <input type="range" id="rgbShiftAngleInput" min="0" max="360" step="1"/>
+
+            <label class="control-label">Shift Jitter <span id="rgbShiftJitterDisplay" class="display-value"></span></label>
+            <input type="range" id="rgbShiftJitterInput" min="0.0" max="1.0" step="0.01"/>
+
+            <label class="control-label">Shift Modus</label>
+            <select id="rgbShiftModeSelect">
+                <option value="add">Additiv</option>
+                <option value="subtract">Subtraktiv</option>
+            </select>
+        </div>
+
+        <div class="section-title">Auto Loop (Protochaos)</div>
+        <div class="control-group">
+            <div class="checkbox-group">
+                <input type="checkbox" id="autoLoopEnabledInput">
+                <label for="autoLoopEnabledInput">Auto Loop Aktiviert</label>
+            </div>
+            
+            <label class="control-label">Loop Geschwindigkeit <span id="autoLoopSpeedDisplay" class="display-value"></span></label>
+            <input type="range" id="autoLoopSpeedInput" min="0.1" max="5.0" step="0.1"/>
+
+            <label class="control-label">Loop Bereich (Limes) <span id="autoLoopLimesDisplay" class="display-value"></span></label>
+            <input type="range" id="autoLoopLimesInput" min="0.0" max="0.5" step="0.01"/>
+            
+            <label class="control-label">Loop Jitter <span id="autoLoopJitterDisplay" class="display-value"></span></label>
+            <input type="range" id="autoLoopJitterInput" min="0.0" max="0.5" step="0.01"/>
+
+            <button id="randomizeLoopButton" class="toggle-btn" style="width:100%;">Zufällige Loop Parameter</button>
+        </div>
+
+        <div class="section-title">Loop-Parameter Auswahl</div>
+        <div id="autoLoopParamList" class="control-group">
+            <!-- Checkboxen werden hier von JavaScript eingefügt -->
+        </div>
+
+    </div>
+
+    <button id="toggleControls" class="toggle-btn">Steuerung Ausblenden</button>
+
+<script type="module">
+    // Setup
+    const canvas = document.getElementById('chaosCanvas');
+    const ctx = canvas.getContext('2d');
+    let width, height;
+    let frameCount = 0;
+    let isPaused = false;
+    let liks = [];
+    let likPairsCache = [];
+    let animationFrameId;
+    let cameraPos = { x:0, y:0, z:0 };
+    let cameraRot = { pitch:0, roll:0, yaw:0 };
+    const rotationSpeedFactor = 0.01;
+    const keys = {};
+    let globalDrift = { vx:0, vy:0, vz:0 };
+
+    // Helpers
+    function hslToRgb(h, s, l){
+        h /= 360;
+        s /= 100;
+        l /= 100;
+        let r, g, b;
+        if(s === 0){ r = g = b = l; } 
+        else {
+            const hue2rgb = (p, q, t) => {
+                if(t < 0) t += 1;
+                if(t > 1) t -= 1;
+                if(t < 1/6) return p + (q - p) * 6 * t;
+                if(t < 1/2) return q;
+                if(t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+                return p;
+            };
+            const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+            const p = 2 * l - q;
+            r = hue2rgb(p, q, h + 1/3);
+            g = hue2rgb(p, q, h);
+            b = hue2rgb(p, q, h - 1/3);
+        }
+        return [Math.round(r*255), Math.round(g*255), Math.round(b*255)];
+    }
+    function hexToRgb(hex){
+        let r=0,g=0,b=0;
+        if(hex.length===4){ r=parseInt(hex[1]+hex[1],16); g=parseInt(hex[2]+hex[2],16); b=parseInt(hex[3]+hex[3],16); }
+        else if(hex.length===7){ r=parseInt(hex.substring(1,3),16); g=parseInt(hex.substring(3,5),16); b=parseInt(hex.substring(5,7),16); }
+        return [r,g,b];
+    }
+    function getHueSimilarity(h1,h2){ let d=Math.abs(h1-h2); d=Math.min(d,360-d); return 1-(d/180); }
+    const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
+
+    // Config: Initialwerte für das Feld
+    const config = {
+        // Allgemeine Steuerung
+        maxLikCount: 300, minLikCount: 100, maxLikLifespan: 1800, universeRadius: 1000, 
+        backgroundColor: '#000000', compositeOperation: 'lighter',
+
+        // Schwarm-Logik
+        attractionStrength: 0.005, attractionSimilarityThreshold: 0.7, repulsionStrength: 0.005, 
+        baseMigrationSpeed: 0.002, personalSpaceRadius: 50, personalSpaceRepulsion: 0.5,
+        globalDriftStrength: 0.1, globalDriftMomentum: 0.99,
+        cameraMovementSpeed: 5.0,
+        animationSpeed: 1.0,
+
+        // Resonanzlinien
+        lineDrawSampleCount: 10, resonanceThickness: 1.5, maxLineThicknessChaos: 0.5,
+        resonanceAlpha: 0.15, maxResonanceDist: 200, resonanceThreshold: 0.0,
+        curveWiggleFactor: 0.5, pulsationSpeed: 0.1, lineTargetPull: 0.5,
+
+        // LIK Rendering
+        renderLiks: true, likBaseSize: 5.0, minLikRenderSize: 1.0, trailAlpha: 0.9,
+
+        // Farbpalette (Sättigung & Helligkeit im Chaos)
+        paletteSaturation: 50, 
+        paletteLightness: 50, 
+
+        // RGB Shift
+        rgbShiftLiks: true, rgbShiftLines: true, rgbShiftAmount: 6.0, rgbShiftAngleDeg: 45, rgbShiftJitter: .15, rgbShiftMode:'add',
+
+        // Auto loop
+        autoLoopEnabled:false, autoLoopSpeed:2.0, autoLoopLimes:.2, autoLoopJitter:.15,
+    };
+
+    // LIK Class (Lokalisierter Informationsknoten)
+    class LIK {
+        constructor(x=0,y=0,z=0){
+            this.x = x + (Math.random() - 0.5) * 50;
+            this.y = y + (Math.random() - 0.5) * 50;
+            this.z = z + (Math.random() - 0.5) * 50;
+            this.vx = 0;
+            this.vy = 0;
+            this.vz = 0;
+            this.birthFrame = frameCount;
+            // Variable Lebensdauer
+            this.initialLifespan = config.maxLikLifespan * (0.5 + Math.random() * 0.5);
+            this.initialHue = Math.random()*360;
+            this.hue = this.initialHue;
+            this.color = '';
+            this.rgb = {r:0,g:0,b:0};
+            this.updateColor();
+        }
+        updateColor(){
+            // Alter beeinflusst die Farbe (langsamer Farbdrift)
+            const age = (frameCount-this.birthFrame)/this.initialLifespan;
+            this.hue = (this.initialHue + age*36) % 360;
+            const s = config.paletteSaturation;
+            let l = config.paletteLightness;
+
+            this.color = `hsl(${this.hue}, ${s}%, ${l}%)`;
+            const [r,g,b] = hslToRgb(this.hue,s,l);
+            this.rgb = {r,b,g};
+        }
+        update(){
+            // Farbe nur periodisch aktualisieren
+            if(frameCount % 15 === 0) this.updateColor();
+
+            // Interaktionskräfte berechnen
+            let fx = 0, fy = 0, fz = 0;
+
+            for(const other of liks){
+                if(other === this) continue;
+                const dx = other.x - this.x;
+                const dy = other.y - this.y;
+                const dz = other.z - this.z;
+                const distSq = dx*dx + dy*dy + dz*dz;
+                const dist = Math.sqrt(distSq);
+
+                if(distSq < 1.0) continue; // Division durch Null vermeiden
+
+                // Abstoßung (Personal Space)
+                if(dist < config.personalSpaceRadius){
+                    const r = config.personalSpaceRepulsion * (config.personalSpaceRadius - dist) / dist;
+                    fx -= dx * r;
+                    fy -= dy * r;
+                    fz -= dz * r;
+                }
+
+                // Anziehung/Abstoßung (Farb-Ähnlichkeit)
+                const similarity = getHueSimilarity(this.hue, other.hue);
+                if(similarity > config.attractionSimilarityThreshold){
+                    // Anziehung
+                    const strength = config.attractionStrength * similarity / distSq;
+                    fx += dx * strength;
+                    fy += dy * strength;
+                    fz += dz * strength;
+                } else {
+                    // Abstoßung
+                    const strength = config.repulsionStrength * (1-similarity) / distSq;
+                    fx -= dx * strength;
+                    fy -= dy * strength;
+                    fz -= dz * strength;
+                }
+            }
+
+            // Basis-Wander-Geschw. (Migration/Zufall)
+            const mig = config.baseMigrationSpeed;
+            fx += (Math.random() - 0.5) * mig;
+            fy += (Math.random() - 0.5) * mig;
+            fz += (Math.random() - 0.5) * mig;
+
+            // Globale Drift (Simuliert äußere Kraft)
+            fx += globalDrift.vx;
+            fy += globalDrift.vy;
+            fz += globalDrift.vz;
+
+            // Update Geschwindigkeit (Trägheit)
+            this.vx += fx;
+            this.vy += fy;
+            this.vz += fz;
+
+            // Dämpfung (Friction/Drag)
+            const damping = config.globalDriftMomentum; 
+            this.vx *= damping;
+            this.vy *= damping;
+            this.vz *= damping;
+
+            // Update Position
+            this.x += this.vx;
+            this.y += this.vy;
+            this.z += this.vz;
+
+            // Universum-Radius Begrenzung (Boundary)
+            const distToCenter = Math.sqrt(this.x*this.x + this.y*this.y + this.z*this.z);
+            if(distToCenter > config.universeRadius){
+                const factor = config.universeRadius / distToCenter;
+                this.x *= factor;
+                this.y *= factor;
+                this.z *= factor;
+            }
+        }
+    }
+
+    // Auto loop engine
+    const loopableParamIds = [
+        'maxLikCountInput', 'minLikCountInput', 'maxLikLifespanInput',
+        'attractionStrengthInput', 'attractionSimilarityThresholdInput',
+        'repulsionStrengthInput', 'baseMigrationSpeedInput',
+        'cameraMovementSpeedInput', 'universeRadiusInput',
+        'personalSpaceRadiusInput', 'personalSpaceRepulsionInput',
+        'globalDriftStrengthInput', 'globalDriftMomentumInput',
+        'lineDrawSampleCountInput', 'resonanceThicknessInput', 'maxLineThicknessChaosInput',
+        'resonanceAlphaInput', 'maxResonanceDistInput', 
+        'curveWiggleFactorInput', 'pulsationSpeedInput', 'lineTargetPullInput',
+        'likBaseSizeInput', 'minLikRenderSizeInput', 'trailAlphaInput',
+        'rgbShiftAmountInput', 'rgbShiftAngleInput', 'rgbShiftJitterInput',
+        'animationSpeedInput',
+        'paletteSaturationInput', 
+        'paletteLightnessInput', 
+        'compositeOperationSelect',
+    ];
+    const autoLoop = {
+        entries:new Map() // key: configKey, value: {min, max, t, dir, speedMul}
+    };
+    // Funktion, um von der Input-ID zum Config-Schlüssel zu gelangen
+    function inputIdToConfigKey(id){
+        const base = id.replace(/Input|Select$/,'');
+        const map = {
+            cameraMovementSpeed: 'cameraMovementSpeed',
+            rgbShiftAngle: 'rgbShiftAngleDeg', 
+            compositeOperation: 'compositeOperation',
+            paletteSaturation: 'paletteSaturation', 
+            paletteLightness: 'paletteLightness' 
+        };
+        return map[base] || base; 
+    }
+    // Fügt einen Parameter zur Auto-Loop-Steuerung hinzu
+    function addLoopEntry(prop){
+        let inputId = prop + 'Input';
+        // Spezialfälle für Input-IDs
+        if (prop === 'cameraMovementSpeed') inputId = 'cameraMovementSpeedInput';
+        if (prop === 'rgbShiftAngleDeg') inputId = 'rgbShiftAngleInput';
+        if (prop === 'compositeOperation') inputId = 'compositeOperationSelect';
+        if (prop === 'paletteSaturation') inputId = 'paletteSaturationInput';
+        if (prop === 'paletteLightness') inputId = 'paletteLightnessInput';
+        
+        const input = document.getElementById(inputId);
+        if(!input) return;
+
+        const entry = {
+            speedMul: .5 + Math.random()*1.5,
+        };
+
+        if (input.tagName.toLowerCase() === 'select') {
+            entry.isSelect = true;
+            entry.options = Array.from(input.options).map(opt => opt.value);
+            entry.lastChangeFrame = frameCount;
+        } else {
+            // Logik für Range-Slider
+            entry.isSelect = false;
+            const uiMin = parseFloat(input.min);
+            const uiMax = parseFloat(input.max);
+            // Limes (Begrenzung des Bereichs)
+            const span = uiMax - uiMin;
+            const lim = config.autoLoopLimes;
+            entry.min = uiMin + span*lim;
+            entry.max = uiMax - span*lim;
+            entry.t = Math.random()*(entry.max-entry.min); // Zufälliger Startpunkt
+            entry.dir = Math.random()<.5 ? 1 : -1; // Zufällige Richtung
+        }
+        
+        autoLoop.entries.set(prop, entry);
+    }
+    // Generiert die Checkbox-Liste für den Auto Loop
+    function buildAutoLoopParamList(){
+        const container = document.getElementById('autoLoopParamList');
+        container.innerHTML = '';
+        
+        // Generiere eine sortierte Liste von Parameternamen für die Checkbox-Liste
+        const loopableParams = loopableParamIds.map(id => inputIdToConfigKey(id))
+                                              .filter((value, index, self) => self.indexOf(value) === index) // Duplikate entfernen
+                                              .sort();
+
+        for(const paramKey of loopableParams){
+            const inputId = (paramKey === 'rgbShiftAngleDeg' ? 'rgbShiftAngle' : paramKey) + (paramKey !== 'compositeOperation' ? 'Input' : 'Select');
+            
+            // Lesbarer Name
+            const displayName = inputId.replace(/Input|Select/,'')
+                                       .replace(/([A-Z])/g, ' $1')
+                                       .replace(/^(.)/, (match) => match.toUpperCase())
+                                       .replace(/Lik /g, 'LIK ')
+                                       .replace(/Rgb/g, 'RGB')
+                                       .replace(/Deg/g, 'Grad')
+                                       .replace(/Count/g, 'Zahl')
+                                       .replace(/Lifespan/g, 'Lebensdauer')
+                                       .replace(/Base/g, 'Basis')
+                                       .replace(/Min /g, 'Min. ')
+                                       .replace(/Max /g, 'Max. ')
+                                       .replace(/Speed/g, 'Geschw.')
+                                       .replace(/Threshold/g, 'Schwelle')
+                                       .replace(/Dist/g, 'Dist.')
+                                       .trim();
+
+            const div = document.createElement('div');
+            div.className = 'checkbox-group';
+            div.innerHTML = `
+                <input type="checkbox" id="autoLoopCheck_${paramKey}">
+                <label for="autoLoopCheck_${paramKey}">${displayName}</label>
+            `;
+            
+            // Checkbox-Zustand beim Start synchronisieren
+            if(autoLoop.entries.has(paramKey)){
+                div.querySelector('input').checked = true;
+            }
+
+            div.querySelector('input').addEventListener('change', (e) => {
+                if(e.target.checked){
+                    addLoopEntry(paramKey);
+                } else {
+                    autoLoop.entries.delete(paramKey);
+                }
+            });
+            container.appendChild(div);
+        }
+    }
+    // Setzt die zufälligen Zielwerte für die Loop-Parameter zurück
+    function randomizeLoopTargets(){
+        for(const [prop, e] of autoLoop.entries){
+            if(e.isSelect) continue; // Nur Range-Inputs randomisieren
+
+            // Neue zufällige Position und Richtung
+            e.t = Math.random()*(e.max-e.min);
+            e.dir = Math.random()<.5 ? 1 : -1;
+            e.speedMul = .5 + Math.random()*1.5;
+        }
+    }
+    // Aktualisiert die Loop-Parameter
+    function updateAutoLoop(dt){
+        if(!config.autoLoopEnabled) return;
+        const baseSpeed = config.autoLoopSpeed;
+        const jitter = config.autoLoopJitter;
+        
+        for(const [prop, e] of autoLoop.entries){
+            
+            let inputId = prop + 'Input';
+            if (prop === 'cameraMovementSpeed') inputId = 'cameraMovementSpeedInput';
+            if (prop === 'rgbShiftAngleDeg') inputId = 'rgbShiftAngleInput';
+            if (prop === 'compositeOperation') inputId = 'compositeOperationSelect';
+            if (prop === 'paletteSaturation') inputId = 'paletteSaturationInput';
+            if (prop === 'paletteLightness') inputId = 'paletteLightnessInput';
+
+            const input = document.getElementById(inputId);
+            if(!input) continue;
+
+            if (e.isSelect) {
+                // Logik für <select> Dropdowns
+                const changeInterval = Math.max(10, 120 / (baseSpeed * e.speedMul)); 
+                if (frameCount - e.lastChangeFrame > changeInterval) {
+                    const newIndex = Math.floor(Math.random() * e.options.length);
+                    const newVal = e.options[newIndex];
+                    
+                    input.value = newVal;
+                    input.dispatchEvent(new Event('change',{bubbles:true}));
+                    e.lastChangeFrame = frameCount;
+                }
+            } else {
+                // Logik für <input type="range"> Slider
+                const speed = baseSpeed * e.speedMul;
+                e.t += e.dir * speed * dt; // dt bereits multipliziert mit 60
+                
+                // Bounce-Logik
+                if(e.t > (e.max-e.min)){ e.t = (e.max-e.min); e.dir = -1; }
+                if(e.t < 0){ e.t = 0; e.dir = 1; }
+                
+                // Wert mit Jitter
+                let val = e.min + e.t;
+                // Jitter hinzufuegen, basierend auf der Spanne
+                val += (Math.random()-.5)*(e.max-e.min)*jitter*0.02; 
+                val = clamp(val, e.min, e.max);
+                
+                // Input-Wert aktualisieren und Event auslösen
+                input.value = val;
+                input.dispatchEvent(new Event('input',{bubbles:true}));
+            }
+        }
+    }
+
+    // Kamera und Drift
+    function updateCamera(){
+        let moveSpeed = config.cameraMovementSpeed;
+        if(keys['Shift']) moveSpeed *= 3; // Schnellere Bewegung bei Shift
+
+        // Rotation (Blickrichtung)
+        cameraRot.yaw += keys['ArrowLeft'] ? rotationSpeedFactor : keys['ArrowRight'] ? -rotationSpeedFactor : 0;
+        cameraRot.pitch += keys['ArrowUp'] ? rotationSpeedFactor : keys['ArrowDown'] ? -rotationSpeedFactor : 0;
+        cameraRot.pitch = clamp(cameraRot.pitch, -Math.PI/2, Math.PI/2); // Pitch begrenzen
+
+        // Bewegung (WASD und Space/Ctrl)
+        let dx = 0, dy = 0, dz = 0;
+        const forward = keys['w'];
+        const backward = keys['s'];
+        const left = keys['a'];
+        const right = keys['d'];
+        const up = keys[' ']; // Space
+        const down = keys['Control']; // Ctrl
+
+        if (forward || backward || left || right) {
+            const rotY = cameraRot.yaw;
+            if (forward || backward) {
+                const speed = (forward ? moveSpeed : -moveSpeed);
+                dx += Math.sin(rotY) * speed;
+                dz += Math.cos(rotY) * speed;
+            }
+            if (left || right) {
+                const speed = (left ? -moveSpeed : moveSpeed);
+                dx += Math.sin(rotY + Math.PI/2) * speed;
+                dz += Math.cos(rotY + Math.PI/2) * speed;
+            }
+        }
+
+        if(up) dy -= moveSpeed; // Y-Achse ist invers im 2D Canvas (0 oben)
+        if(down) dy += moveSpeed;
+
+        cameraPos.x += dx;
+        cameraPos.y += dy;
+        cameraPos.z += dz;
+    }
+    function updateGlobalDrift(){
+        const strength = config.globalDriftStrength;
+        const momentum = config.globalDriftMomentum;
+        
+        // Drift verringert sich durch Impuls
+        globalDrift.vx *= momentum;
+        globalDrift.vy *= momentum;
+        globalDrift.vz *= momentum;
+
+        // Gelegentlich neuen Drift hinzufügen (Zufallsimpuls)
+        if(Math.random() < 0.01){ 
+            globalDrift.vx += (Math.random() - 0.5) * strength;
+            globalDrift.vy += (Math.random() - 0.5) * strength;
+            globalDrift.vz += (Math.random() - 0.5) * strength;
+        }
+    }
+
+    // Drawing
+    function project(x,y,z){
+        // Transformation relativ zur Kamera
+        const dx = x - cameraPos.x;
+        const dy = y - cameraPos.y;
+        const dz = z - cameraPos.z;
+
+        // 3D Rotation (Yaw)
+        const cz = Math.cos(cameraRot.yaw);
+        const sz = Math.sin(cameraRot.yaw);
+        const x1 = cz * dx - sz * dz;
+        const z1 = sz * dx + cz * dz;
+
+        // 3D Rotation (Pitch)
+        const cp = Math.cos(cameraRot.pitch);
+        const sp = Math.sin(cameraRot.pitch);
+        const y2 = cp * dy - sp * z1;
+        const z2 = sp * dy + cp * z1;
+
+        // Perspektive
+        const fov = width / (2 * Math.tan(Math.PI/4)); 
+        const scale = fov / (z2 + 1000); 
+
+        return {
+            x: width/2 + x1 * scale,
+            y: height/2 + y2 * scale,
+            z: z2,
+            scale: scale
+        };
+    }
+    function drawResonanceLines(){
+        ctx.strokeStyle = `rgba(255, 255, 255, ${config.resonanceAlpha})`;
+        ctx.lineWidth = config.resonanceThickness;
+        ctx.globalCompositeOperation = config.compositeOperation;
+
+        const maxDistSq = config.maxResonanceDist * config.maxResonanceDist;
+        const sampleCount = config.lineDrawSampleCount;
+        const curveWiggleFactor = config.curveWiggleFactor;
+        const pulsation = Math.sin(frameCount * config.pulsationSpeed) * config.maxLineThicknessChaos;
+        const targetPull = config.lineTargetPull;
+
+        // Sortiere Paare nach Z-Tiefe (optional, für besseres Überlappen)
+        // const sortedPairs = likPairsCache.sort((a,b)=>(project(a[0].x,a[0].y,a[0].z).z+project(a[1].x,a[1].y,a[1].z).z) - (project(b[0].x,b[0].y,b[0].z).z+project(b[1].x,b[1].y,b[1].z).z));
+        const sortedPairs = likPairsCache; 
+
+        for(const [A,B] of sortedPairs){
+            const dx = B.x - A.x;
+            const dy = B.y - A.y;
+            const dz = B.z - A.z;
+            const distSq = dx*dx + dy*dy + dz*dz;
+            
+            if(distSq > maxDistSq) continue;
+            
+            const dist = Math.sqrt(distSq);
+            // Ähnlichkeit der Hues
+            const similarity = getHueSimilarity(A.hue, B.hue);
+
+            if(similarity < config.resonanceThreshold) continue;
+
+            const A_proj = project(A.x, A.y, A.z);
+            const B_proj = project(B.x, B.y, B.z);
+
+            if(A_proj.z < -900 || B_proj.z < -900) continue; // Zu nah an der Kamera
+
+            // Farbe basierend auf Hue-Mittelwert
+            let avgHue = (A.hue + B.hue) / 2;
+            if (Math.abs(A.hue - B.hue) > 180) {
+                avgHue = (Math.max(A.hue,B.hue)+360 + Math.min(A.hue,B.hue)) / 2;
+            }
+            avgHue %= 360;
+            const s=config.paletteSaturation;
+            let l=config.paletteLightness;
+
+            const [r,g,b] = hslToRgb(avgHue,s,l);
+
+            const drawCurve = (col)=>{
+                ctx.beginPath();
+                ctx.moveTo(A_proj.x, A_proj.y);
+
+                // Dicke der Linie, beeinflusst durch Skalierung und Pulsation/Chaos
+                const thickness = (config.resonanceThickness + pulsation) * similarity * A_proj.scale * 100;
+                ctx.lineWidth = clamp(thickness, 0.1, 10); 
+
+                for(let i=1; i<=sampleCount; i++){
+                    const t = i/sampleCount;
+
+                    // Interpolierte 3D Position
+                    let midX = A.x + dx * t;
+                    let midY = A.y + dy * t;
+                    let midZ = A.z + dz * t;
+
+                    // Wiggle (Linien-Verzerrung)
+                    const wiggleAmt = Math.sin(t*Math.PI) * curveWiggleFactor * dist;
+                    const wiggleAngle = Math.sin(t*10 + frameCount*0.1) * 2 * Math.PI;
+
+                    const perpX = Math.cos(wiggleAngle) * wiggleAmt;
+                    const perpY = Math.sin(wiggleAngle) * wiggleAmt;
+
+                    midX += perpX;
+                    midY += perpY;
+                    midZ += Math.cos(frameCount * 0.05) * wiggleAmt * 0.1;
+
+                    // Ziel-Zug (zieht die Kurve zum Kamera-Target)
+                    const targetX = cameraPos.x;
+                    const targetY = cameraPos.y;
+                    const targetZ = cameraPos.z;
+
+                    const pull = t * (1-t) * targetPull;
+                    midX = midX * (1-pull) + targetX * pull;
+                    midY = midY * (1-pull) + targetY * pull;
+                    midZ = midZ * (1-pull) + targetZ * pull;
+
+
+                    // Projektion
+                    const proj = project(midX, midY, midZ);
+                    if(proj.z < -900) continue;
+
+                    ctx.lineTo(proj.x, proj.y);
+                }
+                ctx.lineTo(B_proj.x, B_proj.y);
+                ctx.strokeStyle = col;
+                ctx.stroke();
+            }
+
+            // RGB Shift für Linien
+            if(config.rgbShiftLines && config.rgbShiftAmount > 0){
+                const angleRad = config.rgbShiftAngleDeg * Math.PI / 180;
+                const shift = config.rgbShiftAmount;
+                const jitter = config.rgbShiftJitter * (Math.random() - 0.5);
+
+                const dx_shift = Math.cos(angleRad) * (shift + jitter);
+                const dy_shift = Math.sin(angleRad) * (shift + jitter);
+                
+                // Rot
+                ctx.setTransform(1, 0, 0, 1, dx_shift, dy_shift);
+                drawCurve(`rgba(${r}, 0, 0, ${config.resonanceAlpha})`);
+
+                // Grün
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
+                drawCurve(`rgba(0, ${g}, 0, ${config.resonanceAlpha})`);
+
+                // Blau
+                ctx.setTransform(1, 0, 0, 1, -dx_shift, -dy_shift);
+                drawCurve(`rgba(0, 0, ${b}, ${config.resonanceAlpha})`);
+
+                ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset
+            } else {
+                drawCurve(`rgba(${r}, ${g}, ${b}, ${config.resonanceAlpha})`);
+            }
+        }
+    }
+    function drawLIKs(){
+        if(!config.renderLiks) return;
+
+        ctx.globalCompositeOperation = config.compositeOperation;
+
+        for(const lik of liks){
+            const proj = project(lik.x, lik.y, lik.z);
+
+            if(proj.z < -900) continue; // Zu nah
+
+            const size = config.likBaseSize * proj.scale * 100;
+            const renderSize = clamp(size, config.minLikRenderSize, 50);
+
+            if(renderSize < 0.5) continue;
+
+            const drawCircle = (color, x, y)=>{
+                ctx.fillStyle = color;
+                ctx.beginPath();
+                ctx.arc(x, y, renderSize, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // RGB Shift für LIKs
+            if(config.rgbShiftLiks && config.rgbShiftAmount > 0){
+                const angleRad = config.rgbShiftAngleDeg * Math.PI / 180;
+                const shift = config.rgbShiftAmount;
+                const jitter = config.rgbShiftJitter * (Math.random() - 0.5);
+                
+                const dx_shift = Math.cos(angleRad) * (shift + jitter);
+                const dy_shift = Math.sin(angleRad) * (shift + jitter);
+
+                // Rot
+                drawCircle(`rgba(${lik.rgb.r}, 0, 0, 1)`, proj.x + dx_shift, proj.y + dy_shift);
+                // Grün
+                drawCircle(`rgba(0, ${lik.rgb.g}, 0, 1)`, proj.x, proj.y);
+                // Blau
+                drawCircle(`rgba(0, 0, ${lik.rgb.b}, 1)`, proj.x - dx_shift, proj.y - dy_shift);
+                
+            } else {
+                drawCircle(lik.color, proj.x, proj.y);
+            }
+        }
+    }
+
+    // Main Loop Management
+    function updateLikPairsCache(){
+        likPairsCache = [];
+        // Caching der LIK-Paare zur Reduzierung der Schleifen in drawResonanceLines
+        const visibleLiks = liks.filter(lik => project(lik.x, lik.y, lik.z).z > -900);
+
+        for(let i=0; i<visibleLiks.length; i++){
+            for(let j=i+1; j<visibleLiks.length; j++){
+                likPairsCache.push([visibleLiks[i], visibleLiks[j]]);
+            }
+        }
+    }
+    function manageLIKs(){
+        // LIKs löschen, deren Lebensdauer abgelaufen ist
+        liks = liks.filter(lik => frameCount - lik.birthFrame < lik.initialLifespan);
+
+        // LIKs hinzufügen, um die Mindestanzahl zu erreichen
+        if (liks.length < config.minLikCount) {
+             liks.push(new LIK(cameraPos.x, cameraPos.y, cameraPos.z));
+        } 
+        // LIKs mit geringer Wahrscheinlichkeit hinzufügen, bis Max-Anzahl erreicht ist
+        else if(liks.length < config.maxLikCount && Math.random() < 0.05){
+            liks.push(new LIK(cameraPos.x, cameraPos.y, cameraPos.z));
+        }
+
+        if(frameCount % 10 === 0) updateLikPairsCache();
+    }
+
+    // UI & Event Handler
+    function bindRange(inputId, configKey, displayId, decimalPlaces){
+        const input = document.getElementById(inputId);
+        const display = document.getElementById(displayId);
+        if(!input || !display) return;
+
+        // Setze Startwerte
+        input.value = config[configKey];
+        display.textContent = Number(config[configKey]).toFixed(decimalPlaces);
+
+        input.addEventListener('input', (e) => {
+            config[configKey] = parseFloat(e.target.value);
+            display.textContent = Number(config[configKey]).toFixed(decimalPlaces);
+            // Spezialfall: Anzahl der LIKs
+            if(configKey === 'maxLikCount' || configKey === 'minLikCount') manageLIKs();
+        });
+    }
+    function setupUI(){
+        // Binding der Range-Inputs
+        bindRange('maxLikCountInput','maxLikCount','maxLikCountDisplay',0);
+        bindRange('minLikCountInput','minLikCount','minLikCountDisplay',0);
+        bindRange('maxLikLifespanInput','maxLikLifespan','maxLikLifespanDisplay',0);
+        bindRange('universeRadiusInput','universeRadius','universeRadiusDisplay',0);
+
+        bindRange('attractionStrengthInput','attractionStrength','attractionStrengthDisplay',4);
+        bindRange('attractionSimilarityThresholdInput','attractionSimilarityThreshold','attractionSimilarityThresholdDisplay',2);
+        bindRange('repulsionStrengthInput','repulsionStrength','repulsionStrengthDisplay',4);
+        bindRange('baseMigrationSpeedInput','baseMigrationSpeed','baseMigrationSpeedDisplay',4);
+        bindRange('personalSpaceRadiusInput','personalSpaceRadius','personalSpaceRadiusDisplay',0);
+        bindRange('personalSpaceRepulsionInput','personalSpaceRepulsion','personalSpaceRepulsionDisplay',2);
+
+        bindRange('globalDriftStrengthInput','globalDriftStrength','globalDriftStrengthDisplay',2);
+        bindRange('globalDriftMomentumInput','globalDriftMomentum','globalDriftMomentumDisplay',3);
+
+        bindRange('animationSpeedInput','animationSpeed','animationSpeedDisplay',1);
+        bindRange('cameraMovementSpeedInput','cameraMovementSpeed','cameraMovementSpeedDisplay',1);
+
+        bindRange('lineDrawSampleCountInput','lineDrawSampleCount','lineDrawSampleCountDisplay',0);
+        bindRange('resonanceThicknessInput','resonanceThickness','resonanceThicknessDisplay',1);
+        bindRange('maxLineThicknessChaosInput','maxLineThicknessChaos','maxLineThicknessChaosDisplay',2);
+        bindRange('resonanceAlphaInput','resonanceAlpha','resonanceAlphaDisplay',2);
+        bindRange('maxResonanceDistInput','maxResonanceDist','maxResonanceDistDisplay',0);
+
+        bindRange('curveWiggleFactorInput','curveWiggleFactor','curveWiggleFactorDisplay',2);
+        bindRange('pulsationSpeedInput','pulsationSpeed','pulsationSpeedDisplay',2);
+        bindRange('lineTargetPullInput','lineTargetPull','lineTargetPullDisplay',2);
+
+        // Farbpalette - Sättigung & Helligkeit
+        bindRange('paletteSaturationInput','paletteSaturation','paletteSaturationDisplay',0);
+        bindRange('paletteLightnessInput','paletteLightness','paletteLightnessDisplay',0);
+
+        bindRange('likBaseSizeInput','likBaseSize','likBaseSizeDisplay',1);
+        bindRange('minLikRenderSizeInput','minLikRenderSize','minLikRenderSizeDisplay',1);
+        bindRange('trailAlphaInput','trailAlpha','trailAlphaDisplay',2);
+
+        bindRange('rgbShiftAmountInput','rgbShiftAmount','rgbShiftAmountDisplay',1);
+        bindRange('rgbShiftAngleInput','rgbShiftAngleDeg','rgbShiftAngleDisplay',0);
+        bindRange('rgbShiftJitterInput','rgbShiftJitter','rgbShiftJitterDisplay',2);
+
+        // Checkboxen
+        document.getElementById('renderLiksInput').checked = config.renderLiks;
+        document.getElementById('renderLiksInput').addEventListener('change', e=> config.renderLiks = e.target.checked);
+
+        document.getElementById('rgbShiftLiksInput').checked = config.rgbShiftLiks;
+        document.getElementById('rgbShiftLiksInput').addEventListener('change', e=> config.rgbShiftLiks = e.target.checked);
+        document.getElementById('rgbShiftLinesInput').checked = config.rgbShiftLines;
+        document.getElementById('rgbShiftLinesInput').addEventListener('change', e=> config.rgbShiftLines = e.target.checked);
+
+        // Selects
+        const rgbShiftModeSelect = document.getElementById('rgbShiftModeSelect');
+        rgbShiftModeSelect.value = config.rgbShiftMode;
+        rgbShiftModeSelect.addEventListener('change', e=> config.rgbShiftMode = e.target.value);
+        
+        const compositeOpSelect = document.getElementById('compositeOperationSelect');
+        compositeOpSelect.value = config.compositeOperation;
+        compositeOpSelect.addEventListener('change', e=> {
+            config.compositeOperation = e.target.value;
+            ctx.globalCompositeOperation = config.compositeOperation; // Sofortiges Update
+        });
+
+        // Hintergrund Farbe
+        const bg = document.getElementById('backgroundColorInput');
+        bg.value = config.backgroundColor;
+        bg.addEventListener('input', e=>{
+            config.backgroundColor = e.target.value;
+            document.body.style.backgroundColor = config.backgroundColor;
+        });
+
+        // Auto Loop
+        document.getElementById('autoLoopEnabledInput').checked = config.autoLoopEnabled;
+        document.getElementById('autoLoopEnabledInput').addEventListener('change', e=> config.autoLoopEnabled = e.target.checked);
+
+        bindRange('autoLoopSpeedInput','autoLoopSpeed','autoLoopSpeedDisplay',1);
+        bindRange('autoLoopLimesInput','autoLoopLimes','autoLoopLimesDisplay',2);
+        bindRange('autoLoopJitterInput','autoLoopJitter','autoLoopJitterDisplay',2);
+
+        document.getElementById('randomizeLoopButton').addEventListener('click', randomizeLoopTargets);
+        document.getElementById('randomizeAllButton').addEventListener('click', randomizeAll);
+
+        // Initialisiere die Auto-Loop Parameter Liste
+        buildAutoLoopParamList();
+
+        // Füge ein paar Standardparameter zum Loop hinzu (z.B. Farbchaos)
+        addLoopEntry('paletteSaturation');
+        addLoopEntry('paletteLightness');
+        addLoopEntry('rgbShiftAmount');
+        addLoopEntry('attractionStrength');
+        
+        // Checkboxes für die initialen Loop-Entries markieren
+        document.getElementById('autoLoopCheck_paletteSaturation').checked = true;
+        document.getElementById('autoLoopCheck_paletteLightness').checked = true;
+        document.getElementById('autoLoopCheck_rgbShiftAmount').checked = true;
+        document.getElementById('autoLoopCheck_attractionStrength').checked = true;
+    }
+    
+    // Setzt alle konfigurierbaren Parameter zufällig
+    function randomizeAll(){
+        console.log("Randomisiere alle Parameter...");
+        
+        // Feld-Geometrie
+        config.maxLikCount = Math.floor(200 + Math.random() * 800);
+        config.minLikCount = Math.floor(50 + Math.random() * 200);
+        config.maxLikLifespan = Math.floor(1000 + Math.random() * 4000);
+        config.universeRadius = Math.floor(500 + Math.random() * 1500);
+
+        // Schwarm-Verhalten
+        config.attractionStrength = 0.0001 + Math.random() * 0.0099;
+        config.attractionSimilarityThreshold = 0.5 + Math.random() * 0.5;
+        config.repulsionStrength = 0.0001 + Math.random() * 0.0199;
+        config.baseMigrationSpeed = 0.0001 + Math.random() * 0.0099;
+        config.personalSpaceRadius = Math.floor(20 + Math.random() * 200);
+        config.personalSpaceRepulsion = 0.1 + Math.random() * 0.9;
+
+        // Farbe (Helligkeit/Sättigung im Chaos)
+        config.paletteSaturation = Math.floor(20 + Math.random() * 80);
+        config.paletteLightness = Math.floor(20 + Math.random() * 60);
+
+        // RGB Shift
+        config.rgbShiftAmount = Math.random() * 10.0;
+        config.rgbShiftAngleDeg = Math.floor(Math.random() * 360);
+        config.rgbShiftJitter = Math.random() * 0.5;
+        config.rgbShiftMode = Math.random() < 0.5 ? 'add' : 'subtract';
+        document.getElementById('rgbShiftModeSelect').value = config.rgbShiftMode;
+
+        // Resonanzlinien
+        config.lineDrawSampleCount = Math.floor(5 + Math.random() * 95);
+        config.resonanceThickness = 0.5 + Math.random() * 4.5;
+        config.maxLineThicknessChaos = Math.random() * 1.0;
+        config.resonanceAlpha = 0.05 + Math.random() * 0.5;
+        config.maxResonanceDist = Math.floor(100 + Math.random() * 700);
+
+        // Interaktion
+        config.globalDriftStrength = Math.random() * 0.2;
+        config.globalDriftMomentum = 0.9 + Math.random() * 0.099;
+        config.animationSpeed = 0.5 + Math.random() * 3.0;
+
+        // UI updaten und LIKs neu initialisieren/anpassen
+        setupUI(); 
+        updateUI();
+        manageLIKs(); 
+    }
+
+    // Updates UI elements
+    function updateUI(){
+        // Diese Funktion synchronisiert die Display-Spans, falls der Wert sich anderswo (z.B. AutoLoop) ändert
+        const ids = [
+            ['maxLikCountDisplay','maxLikCount',0], ['minLikCountDisplay','minLikCount',0],
+            ['maxLikLifespanDisplay','maxLikLifespan',0], ['universeRadiusDisplay','universeRadius',0],
+            ['attractionStrengthDisplay','attractionStrength',4], ['attractionSimilarityThresholdDisplay','attractionSimilarityThreshold',2],
+            ['repulsionStrengthDisplay','repulsionStrength',4], ['baseMigrationSpeedDisplay','baseMigrationSpeed',4],
+            ['personalSpaceRadiusDisplay','personalSpaceRadius',0], ['personalSpaceRepulsionDisplay','personalSpaceRepulsion',2],
+            ['globalDriftStrengthDisplay','globalDriftStrength',2], ['globalDriftMomentumDisplay','globalDriftMomentum',3],
+            ['animationSpeedDisplay','animationSpeed',1], ['cameraMovementSpeedDisplay','cameraMovementSpeed',1],
+            ['paletteSaturationDisplay','paletteSaturation',0], ['paletteLightnessDisplay','paletteLightness',0], 
+            ['lineDrawSampleCountDisplay','lineDrawSampleCount',0], ['resonanceThicknessDisplay','resonanceThickness',1], ['maxLineThicknessChaosDisplay','maxLineThicknessChaos',2],
+            ['resonanceAlphaDisplay','resonanceAlpha',2], ['maxResonanceDistDisplay','maxResonanceDist',0],
+            ['curveWiggleFactorDisplay','curveWiggleFactor',2], ['pulsationSpeedDisplay','pulsationSpeed',2], ['lineTargetPullDisplay','lineTargetPull',2],
+            ['likBaseSizeDisplay','likBaseSize',1], ['minLikRenderSizeDisplay','minLikRenderSize',1], ['trailAlphaDisplay','trailAlpha',2],
+            ['rgbShiftAmountDisplay','rgbShiftAmount',1], ['rgbShiftAngleDisplay','rgbShiftAngleDeg',0], ['rgbShiftJitterDisplay','rgbShiftJitter',2],
+            ['autoLoopSpeedDisplay','autoLoopSpeed',1], ['autoLoopLimesDisplay','autoLoopLimes',2], ['autoLoopJitterDisplay','autoLoopJitter',2]
+        ];
+        for(const [id,key,dec] of ids){
+            const el = document.getElementById(id);
+            if(el) el.textContent = Number(config[key]).toFixed(dec);
+        }
+    }
+
+    // Animation loop
+    let lastTime = performance.now();
+    function animate(now){
+        if(isPaused){ animationFrameId = requestAnimationFrame(animate); return; }
+        // Berechne Delta Time (dt) und multipliziere mit Animations-Geschw.
+        const dt = Math.min(.05, (now - lastTime)/1000) * 60 * config.animationSpeed; 
+        lastTime = now;
+
+        // Updates der Hauptsysteme
+        updateCamera();
+        updateGlobalDrift();
+        updateAutoLoop(dt); // Nutzt dt
+
+        // 1. Clear / Spur malen (Global Composite Operation 'source-over' verwenden)
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.fillStyle = config.backgroundColor.length === 7 ? config.backgroundColor : '#000000'; 
+        // Semi-transparenter Fill für den Trailing-Effekt (Spur)
+        ctx.fillStyle = `rgba(${hexToRgb(config.backgroundColor).join(',')}, ${config.trailAlpha})`;
+        ctx.fillRect(0, 0, width, height);
+
+        // 2. LIKs & Linien logisch aktualisieren
+        manageLIKs();
+        // Update der LIKs basierend auf der berechneten dt (für konsistente Physik)
+        liks.forEach(lik => lik.update()); 
+
+        // 3. Zeichnen (verwende Composite Operation aus der Config)
+        drawResonanceLines();
+        drawLIKs();
+
+        // UI-Werte aktualisieren, falls sie sich durch den AutoLoop geändert haben
+        updateUI();
+
+        frameCount++;
+        animationFrameId = requestAnimationFrame(animate);
+    }
+
+    // Event-Handler
+    function onResize(){
+        width = window.innerWidth;
+        height = window.innerHeight;
+        canvas.width = width;
+        canvas.height = height;
+    }
+    window.addEventListener('resize', onResize);
+    
+    // Keyboard Input
+    window.addEventListener('keydown', (e) => {
+        const key = e.key.toLowerCase();
+        keys[key] = true;
+        // Pause/Fortsetzen mit 'p'
+        if(key === 'p' || key === 'escape'){
+            e.preventDefault();
+            isPaused = !isPaused;
+            document.getElementById('pauseButton').textContent = isPaused ? 'Fortsetzen' : 'Pausieren (P)';
+            document.getElementById('pauseButton').classList.toggle('paused', isPaused);
+            if(!isPaused) animate(performance.now());
+        }
+        // Steuerung ein/ausblenden mit 'i'
+        if(key === 'i') {
+            document.getElementById('toggleControls').click();
+        }
+    });
+    window.addEventListener('keyup', (e) => {
+        const key = e.key.toLowerCase();
+        keys[key] = false;
+    });
+
+    // Button Handler
+    document.getElementById('pauseButton').addEventListener('click', () => {
+        isPaused = !isPaused;
+        document.getElementById('pauseButton').textContent = isPaused ? 'Fortsetzen' : 'Pausieren (P)';
+        document.getElementById('pauseButton').classList.toggle('paused', isPaused);
+        if(!isPaused) animate(performance.now());
+    });
+
+    document.getElementById('toggleControls').addEventListener('click', (e) => {
+        const controls = document.getElementById('controls');
+        const isHidden = controls.classList.toggle('hidden');
+        e.target.textContent = isHidden ? 'Steuerung Einblenden' : 'Steuerung Ausblenden';
+    });
+
+    // Init
+    function init(){
+        onResize();
+        // Setze Standard-Hintergrundfarbe (Schwarz)
+        config.backgroundColor = '#000000';
+        document.body.style.backgroundColor = config.backgroundColor;
+        document.getElementById('backgroundColorInput').value = config.backgroundColor;
+
+        setupUI();
+
+        // Initialisiere LIKs
+        for(let i=0;i<config.maxLikCount;i++) liks.push(new LIK(cameraPos.x,cameraPos.y,cameraPos.z));
+        updateLikPairsCache();
+        
+        // Starte die Animation
+        animate(performance.now());
+    }
+
+    window.onload = init;
+
+</script>
+</body>
+</html>
