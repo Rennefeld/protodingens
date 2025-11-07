@@ -6,6 +6,12 @@ This repository contains a modular PySide6 implementation of the ProtoDingens ne
 
 ```bash
 pip install -e .
+python -m protodingens
+```
+
+Oder starte das installierte Konsolenskript:
+
+```bash
 protodingens
 ```
 
