@@ -9,6 +9,12 @@ pip install -e .
 python -m protodingens
 ```
 
+Alternativ kannst du das Repository auch ohne vorherige Installation direkt starten:
+
+```bash
+python -m protodingens
+```
+
 Oder starte das installierte Konsolenskript:
 
 ```bash
