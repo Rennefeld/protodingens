@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Qt build artifacts
+*.pro.user
+*.qbs.user
+*.qmlc
+*.jsc
