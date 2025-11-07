@@ -8,6 +8,7 @@ from typing import Callable, List, Tuple
 
 from .config import Config
 from .lik import Lik
+from .physics import SwarmIntegrator
 
 
 @dataclass
@@ -50,6 +51,7 @@ class Simulation:
         self.state = SimulationState(config)
         self.state.ensure_population()
         self._on_state_updated: List[Callable[[SimulationState], None]] = []
+        self._integrator = SwarmIntegrator(config)
 
     def on_state_updated(self, callback: Callable[[SimulationState], None]) -> None:
         self._on_state_updated.append(callback)
@@ -60,8 +62,10 @@ class Simulation:
         state.update_global_drift()
 
         liks = state.liks
-        for lik in list(liks):
-            lik.update(state.frame, liks, state.global_drift)
+        for lik in liks:
+            lik.prepare_step(state.frame)
+
+        self._integrator.update(state.frame, liks, state.global_drift)
 
         state.cull_dead_liks()
         state.ensure_population()
