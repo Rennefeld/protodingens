@@ -1,0 +1,12 @@
+[project]
+name = "protodingens"
+version = "0.1.0"
+description = "Python port of the ProtoDingens blueprint"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "PySide6",
+]
+
+[project.scripts]
+protodingens = "protodingens.app:main"
