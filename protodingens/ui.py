@@ -36,6 +36,7 @@ class ProtochaosApp:
         self.renderer = Renderer(self.canvas, self.config)
 
         self.last_update = time.perf_counter()
+        self.sim_time_accumulator = 0.0
         self.root.after(16, self._tick)
 
     def _build_layout(self) -> None:
@@ -513,7 +514,15 @@ class ProtochaosApp:
         self.last_update = now
         self.auto_loop.set_enabled(self.config.auto_loop.auto_loop_enabled)
         if not self.paused:
-            steps = max(1, int(elapsed * 60 * self.config.interaction.animation_speed))
+            speed = self.config.interaction.animation_speed
+            self.sim_time_accumulator += elapsed * 60.0 * speed
+            max_substeps = max(1, int(self.config.interaction.max_substeps_per_frame))
+            if self.sim_time_accumulator > max_substeps * 4.0:
+                self.sim_time_accumulator = max_substeps * 4.0
+            steps = min(max_substeps, int(self.sim_time_accumulator))
+            if steps <= 0:
+                steps = 1
+            self.sim_time_accumulator = max(0.0, self.sim_time_accumulator - steps)
             for _ in range(steps):
                 self.simulation.step()
             self.auto_loop.update(steps, self.simulation.state.frame)

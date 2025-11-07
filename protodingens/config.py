@@ -35,6 +35,7 @@ class InteractionConfig:
     global_drift_momentum: float = 0.99
     animation_speed: float = 1.0
     camera_movement_speed: float = 5.0
+    max_substeps_per_frame: int = 4
 
 
 @dataclass
@@ -119,6 +120,7 @@ CONFIG_KEY_PATHS: Dict[str, Tuple[str, str]] = {
     "globalDriftMomentum": ("interaction", "global_drift_momentum"),
     "animationSpeed": ("interaction", "animation_speed"),
     "cameraMovementSpeed": ("interaction", "camera_movement_speed"),
+    "maxSubstepsPerFrame": ("interaction", "max_substeps_per_frame"),
     "lineDrawSampleCount": ("resonance", "line_draw_sample_count"),
     "resonanceThickness": ("resonance", "resonance_thickness"),
     "maxLineThicknessChaos": ("resonance", "max_line_thickness_chaos"),
