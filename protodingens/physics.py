@@ -7,6 +7,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Sequence, Tuple
 
+
+from .colors import hue_similarity
 from .config import Config
 
 Vector3 = Tuple[float, float, float]
@@ -264,6 +266,8 @@ class TorchSwarmIntegrator(BaseSwarmIntegrator):
 
         new_positions = positions.detach().cpu().tolist()
         new_velocities = velocities.detach().cpu().tolist()
+        new_positions = positions.tolist()
+        new_velocities = velocities.tolist()
 
         for idx, lik in enumerate(liks):
             lik.x, lik.y, lik.z = new_positions[idx]
